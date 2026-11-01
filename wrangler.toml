@@ -6,12 +6,17 @@ compatibility_date = "2024-11-01"
 # Git 集成部署时，Cloudflare 会读取本文件。
 # 部署命令用默认的 `npx wrangler deploy` 即可，不需要额外配置 build 命令
 # （本项目是纯 JS，没有编译步骤；`npm run build` 只用于生成 Dashboard 单文件版）。
+#
+# 关闭预览 URL：控制台 → Worker → Settings → Build → Branch control
+# 取消勾选「Enable Preview Builds」。
+# （预览 URL 开关只在控制台，wrangler.toml 没有对应字段；本项目只部署 main 分支。）
 
-# 每 20 分钟推进一小批扫描。
+# 每 5 分钟推进一小批扫描（用户选择的高频轮询方案）。
 # 免费版单次请求只有 50 子请求 / 6 并发，必须拆成多轮，
 # 不能一次扫完整个池子（100+ IP 会直接超限）。
+# 注意：KV 写入约 288 次/天（免费版限 1000/天）。
 [triggers]
-crons = ["*/20 * * * *"]
+crons = ["*/5 * * * *"]
 
 # 存扫描进度与结果。免费版 KV 每天 10 万读、1000 写，完全够用。
 #
@@ -22,12 +27,15 @@ crons = ["*/20 * * * *"]
 # /sub 每次实时扫描，慢但能用。
 [[kv_namespaces]]
 binding = "CACHE"
-id = "5a8bfc9c389b44f5971314bc4387afbe"
+id = "替换成你自己的KV命名空间ID"
 
 [vars]
 # 上游订阅域名（不含 https://）。路径会原样透传：
-#   访问 /HappyZhang  → 拉取 https://<UPSTREAM>/HappyZhang
-UPSTREAM = "weial.us.ci"
+#   访问 /<订阅key>  → 拉取 https://<UPSTREAM>/<订阅key>
+#
+# ⚠️ 这里填的是「订阅面板」的域名，不是本 Worker 自己的部署域名。
+# 填成本 Worker 自己会导致自环（Worker 请求自己 → 502）。
+UPSTREAM = "你的订阅面板域名"   # 例：example-panel.example.com（不要填 Worker 自己的域名，会自环）
 
 # 要扫描的 ProxyIP 域名，逗号分隔。
 # 想看全部候选可加上：ProxyIP.SG.CMLiussss.net,HKG.ProxyIP.CMLiussss.net

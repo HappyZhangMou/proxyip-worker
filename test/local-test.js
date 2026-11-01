@@ -6,6 +6,8 @@
 import {
   scoreIP,
   injectProxyIP,
+  injectLinkList,
+  looksLikeLinkList,
   extractProxyIPs,
 } from '../src/lib.js';
 
@@ -28,7 +30,7 @@ console.log('\n[1] 住宅判定打分');
 
 {
   const { score, reasons } = scoreIP(
-    'static-71-168-153-36.cmdnnj.fios.verizon.net',
+    'static-203-0-113-7.cmdnnj.fios.verizon.net',
     { as: 'AS701 Verizon Business', hosting: false, proxy: false, mobile: false },
   );
   check('Verizon FiOS 得分 80', score === 80, `score=${score} ${reasons}`);
@@ -73,19 +75,19 @@ console.log('\n[2] 订阅注入');
 const sampleYaml = [
   'proxies:',
   '  - {name: "HK", server: 1.2.3.4, port: 8443, type: vless,',
-  '     path: "/proxyip=ProxyIP.SG.CMLiussss.net?ed=2560", servername: weial.us.ci}',
+  '     path: "/proxyip=ProxyIP.SG.CMLiussss.net?ed=2560", servername: <你的Worker域名>}',
   '  - {name: "JP", server: 5.6.7.8, port: 8443, type: vless,',
-  '     path: "/proxyip=ProxyIP.KR.CMLiussss.net?ed=2560", servername: weial.us.ci}',
+  '     path: "/proxyip=ProxyIP.KR.CMLiussss.net?ed=2560", servername: <你的Worker域名>}',
   'proxy-groups:',
   '  - name: TEST',
   'rules:',
   '  - MATCH,TEST',
 ].join('\n');
 
-const hosts = ['71.168.153.36:443'];
+const hosts = ['203.0.113.7:443'];
 const injected = injectProxyIP(sampleYaml, hosts);
 
-check('注入了单个住宅 IP', injected.includes('proxyip=71.168.153.36:443'), '');
+check('注入了单个住宅 IP', injected.includes('proxyip=203.0.113.7:443'), '');
 check('旧 SG 池已替换', !injected.includes('ProxyIP.SG.CMLiussss.net'));
 check('旧 KR 池已替换', !injected.includes('ProxyIP.KR.CMLiussss.net'));
 check('保留了 ed=2560 参数', (injected.match(/ed=2560/g) || []).length === 2);
@@ -101,7 +103,7 @@ check('节点数量未变', (injected.match(/type: vless/g) || []).length === 2)
   let allGood = true;
   while ((m = re.exec(injected))) {
     count++;
-    if (!m[1].includes('proxyip=71.168.153.36:443')) allGood = false;
+    if (!m[1].includes('proxyip=203.0.113.7:443')) allGood = false;
   }
   check('所有节点 path 均指向住宅 IP', count === 2 && allGood, `count=${count}`);
 }
@@ -125,7 +127,7 @@ console.log('\n[2b] 上游无 proxyip 时插入');
 const noProxyYaml = [
   'proxies:',
   '  - {name: "HK", server: 1.2.3.4, port: 8443, type: vless,',
-  '     xhttp-opts: {path: "/?ed=2560", host: weial.us.ci}}',
+  '     xhttp-opts: {path: "/?ed=2560", host: <你的Worker域名>}}',
   '  - name: "JP"',
   '    server: 5.6.7.8',
   '    type: vless',
@@ -135,11 +137,11 @@ const noProxyYaml = [
   '  - MATCH,DIRECT',
 ].join('\n');
 
-const noProxyOut = injectProxyIP(noProxyYaml, ['71.168.153.36:443']);
+const noProxyOut = injectProxyIP(noProxyYaml, ['203.0.113.7:443']);
 const noProxyPaths = noProxyOut.match(/path: "([^"]+)"/g) || [];
-check('flow map 插入 proxyip', noProxyOut.includes('path: "/proxyip=71.168.153.36:443?ed=2560"'), '');
+check('flow map 插入 proxyip', noProxyOut.includes('path: "/proxyip=203.0.113.7:443?ed=2560"'), '');
 check('ed=2560 保留', noProxyOut.includes('?ed=2560'));
-check('两条 path 都注入', extractProxyIPs(noProxyOut).length === 1 && (noProxyOut.match(/proxyip=71\.168\.153\.36:443/g) || []).length === 2, `出现 ${(noProxyOut.match(/proxyip=/g)||[]).length} 次`);
+check('两条 path 都注入', extractProxyIPs(noProxyOut).length === 1 && (noProxyOut.match(/proxyip=203\.0\.113\.7:443/g) || []).length === 2, `出现 ${(noProxyOut.match(/proxyip=/g)||[]).length} 次`);
 check('无重复 proxyip=', !noProxyOut.includes('proxyip=proxyip='), '');
 check('YAML 结构未被破坏', noProxyOut.includes('proxies:') && noProxyOut.includes('rules:'));
 
@@ -190,7 +192,34 @@ console.log('\n[3] proxyip 提取');
 {
   const found = extractProxyIPs(injected);
   check('注入后只剩 1 个 proxyip', found.length === 1, found.join(', '));
-  check('注入后是住宅 IP', found[0] === '71.168.153.36:443', found[0]);
+  check('注入后是住宅 IP', found[0] === '203.0.113.7:443', found[0]);
+}
+
+// ---------------------------------------------------------------- 链接列表注入
+
+console.log('\n[2c] base64 / 链接列表注入');
+
+{
+  const uuid = 'ee22d84e-05f8-401e-8cc2-86e37b79e243';
+  const vless =
+    `vless://${uuid}@77.239.98.27:8443?security=tls&type=xhttp&mode=stream-one` +
+    '&host=<订阅面板域名>&sni=<订阅面板域名>&path=%2F%3Fed%3D2560&encryption=none&alpn=#DE德国|18ms';
+  const list = [vless, 'vmess://eyJhZGQiOiIxLjEuMS4xIn0=', '# 注释行'].join('\n');
+
+  check('识别为链接列表', looksLikeLinkList(list) === true);
+  check('YAML 不被误判为链接列表', looksLikeLinkList(sampleYaml) === false);
+
+  const out = injectLinkList(list, ['203.0.113.7:443']);
+  check('vless 注入了 proxyip', out.includes('/proxyip=203.0.113.7:443?ed=2560'), '');
+  check('path 已 URL 解码后重写', !/path=%2F%3F/.test(out.split('\n')[1]));
+  check('未做全量转义（path 仍可读）', out.includes('path=/proxyip=203.0.113.7:443?ed=2560'), '');
+  check('ed=2560 保留', out.includes('ed%3D2560') || out.includes('ed=2560'));
+  check('host/sni 未被改动', out.includes('host=<订阅面板域名>') && out.includes('sni=<订阅面板域名>'));
+  check('节点名 # 保留', out.includes('#DE德国|18ms'));
+  check('注释行原样保留', out.includes('# 注释行'));
+  check('非 vless 行未被改动', out.includes('vmess://eyJhZGQiOiIxLjEuMS4xIn0='));
+  check('首行是注入注释', /^# \[proxyip-worker\]/.test(out));
+  check('行数 3 行 + 1 注释', out.split('\n').length === 4, String(out.split('\n').length));
 }
 
 // ---------------------------------------------------------------- 路径直通
@@ -205,7 +234,7 @@ function looksLikeKey(pathname) {
   return !RESERVED.has(seg.toLowerCase());
 }
 
-check('/HappyZhang 识别为 key', looksLikeKey('/HappyZhang') === true);
+check('/my-key 识别为 key', looksLikeKey('/my-key') === true);
 check('/my-sub_2024 识别为 key', looksLikeKey('/my-sub_2024') === true);
 check('/aB3.x-y 识别为 key', looksLikeKey('/aB3.x-y') === true);
 check('/sub 是保留路径', looksLikeKey('/sub') === false);
@@ -221,10 +250,10 @@ check('65 位超长不算 key', looksLikeKey('/' + 'a'.repeat(65)) === false);
 
 // 上游 URL 拼接
 {
-  const upstream = 'weial.us.ci';
+  const upstream = '<你的Worker域名>';
   const build = (key, qs) => `https://${upstream}/${key}${qs}`;
-  check('key 拼接正确', build('HappyZhang', '') === 'https://weial.us.ci/HappyZhang');
-  check('带参数拼接正确', build('HappyZhang', '?flag=clash') === 'https://weial.us.ci/HappyZhang?flag=clash');
+  check('key 拼接正确', build('my-key', '') === 'https://<你的Worker域名>/my-key');
+  check('带参数拼接正确', build('my-key', '?flag=clash') === 'https://<你的Worker域名>/my-key?flag=clash');
 }
 
 // ---------------------------------------------------------------- 汇总

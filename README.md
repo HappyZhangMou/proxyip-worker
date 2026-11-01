@@ -3,6 +3,36 @@
 自动从公共 ProxyIP 池里挑出**真正的住宅 IP**，并在你更新订阅时注入进去。
 填一次订阅地址，以后不用再手动改。
 
+## 快速开始（3 步）
+
+| 角色 | 域名 |
+|---|---|
+| 本 Worker（订阅重写） | `<你的Worker域名>` |
+| 上游订阅面板 | `<订阅面板域名>`（节点来源，照旧可用） |
+
+**1. Cloudflare 控制台 → Worker → Settings → Variables**
+`UPSTREAM = <订阅面板域名>`（**不要填 `<你的Worker域名>`，那是本 Worker 自己，会自环返回 500**）。
+
+**2. 重新部署**（push `main` 或控制台 Redeploy），然后预热：
+
+```bash
+curl "https://<你的Worker域名>/refresh?token=你的TOKEN"
+```
+
+**3. Clash / Bettbox 订阅地址改成：**
+
+```
+https://<你的Worker域名>/<订阅key>?clash=1
+```
+
+key 不用变。若线上还是旧版（`/<订阅key>` 返回 502），先用这条等价地址：
+
+```
+https://<你的Worker域名>/sub?url=https%3A%2F%2F<订阅面板域名>%2F<订阅key>%3Fclash%3D1
+```
+
+详见下方「域名分工」与「在 Clash / Bettbox 里使用」。
+
 ## 为什么是这个架构
 
 我先核查了 CM 版 edgetunnel 的源码，`PROXYIP` 变量的处理只有一个函数：
@@ -19,7 +49,7 @@ async function 整理成数组(内容) {
 
 能实现「填一次」的正确做法是**订阅重写**：让 Clash 的订阅地址指向本 Worker，
 Worker 每次被请求时读取已缓存的住宅 IP，实时注入进 YAML 再返回。
-你在 `weial.us.ci` 里什么都不用填，只在 Clash 里改一次订阅地址。
+你在 `<订阅面板域名>` 里什么都不用填，只在 Clash 里改一次订阅地址（改成 `<你的Worker域名>`）。
 
 ## 关于免费版限制（上一版超限的原因）
 
@@ -35,7 +65,7 @@ Worker 每次被请求时读取已缓存的住宅 IP，实时注入进 YAML 再�
 |---|---|
 | 增量扫描 | `BATCH_PER_RUN = 24`，每轮 cron 只处理一小批，子请求 ≤ 26 |
 | 并发上限 | `CONCURRENCY = 4`，留 2 个余量 |
-| 分开调度 | cron 每 20 分钟推进一批，池子大也能在两小时内扫完 |
+| 分开调度 | cron 每 5 分钟推进一批，池子大也能在 25 分钟内扫完（KV 写入约 288 次/天，仍远低于免费版 1000/天） |
 | 结果落 KV | `/sub` 只读 KV，几乎零 CPU、零子请求 |
 
 ## 部署方式
@@ -87,7 +117,7 @@ git push -u origin main
   | 类型 | 名称 | 值 |
   |---|---|---|
   | **Secret** | `TOKEN` | 自己编的随机串 |
-  | Text | `UPSTREAM` | `weial.us.ci` |
+  | Text | `UPSTREAM` | `<订阅面板域名>`（订阅面板，不能填 Worker 自己的域名） |
   | Text | `PROXYIP_DOMAINS` | 见 `wrangler.toml` |
   | Text | `MIN_SCORE` | `20` |
   | Text | `OUTPUT_PORT` | `443` |
@@ -97,12 +127,19 @@ git push -u origin main
   > `wrangler.toml` 里已经写了 KV ID，Git 部署时也会生效。
   > 如果用的是别人的仓库或用的是自己的 KV，改一下 `wrangler.toml` 里的 `id` 再 push。
 
-- **Triggers → Cron**：`*/20 * * * *`
+- **Triggers → Cron**：`*/5 * * * *`
   （`wrangler.toml` 里已配好，通常会自动生效，可在控制台核对）
+
+- **关闭预览 URL**（每次 push 都会生成预览地址）：
+
+  Settings → **Build** → **Branch control** → 取消勾选 **Enable Preview Builds**
+
+  > 该开关只在控制台，`wrangler.toml` 没有对应字段。
+  > 本项目只从 `main` 部署，关掉后非生产分支的 push 不会再生成预览构建/预览 URL。
 
 **4. 预热**
 
-访问一次 `https://你的域名.workers.dev/refresh?token=你的TOKEN`，让首批住宅 IP 进入 KV。
+访问一次 `https://<你的Worker域名>/refresh?token=你的TOKEN`，让首批住宅 IP 进入 KV。
 
 之后每次 push 到 `main` 都会自动重新部署。
 
@@ -145,7 +182,7 @@ proxyip-worker/
 ├── scripts/
 │   └── build-single-file.mjs   # 生成 dist/_worker.js
 ├── test/
-│   └── local-test.js     # 49 项测试
+│   └── local-test.js     # 61 项测试
 ├── dist/                 # 构建产物（gitignore，Dashboard 用）
 ├── wrangler.toml
 ├── package.json
@@ -158,46 +195,57 @@ proxyip-worker/
 
 ### 在 Clash / Bettbox 里使用
 
-**方式一：路径直通（推荐，你的场景）**
+本 Worker 部署在 `<你的Worker域名>`，节点订阅来自上游面板 `<订阅面板域名>`。
 
-把 Worker 域名直接当订阅域名用，路径原样透传：
+**方式一：路径直通（推荐）**
 
-```
-https://你的域名.workers.dev/HappyZhang
-```
-
-Worker 收到后会自动去拉 `https://weial.us.ci/HappyZhang`，注入住宅 IP 再返回。
-**你的订阅 key `HappyZhang` 不用改，只换域名。**
-
-等 `host.weial.us.ci` 配好后，把 `UPSTREAM` 改掉即可：
-
-```toml
-[vars]
-UPSTREAM = "host.weial.us.ci"     # 原来指向 weial.us.ci
-```
-
-之后访问 `https://你的域名.workers.dev/HappyZhang`
-→ 自动拉 `https://host.weial.us.ci/HappyZhang`。
-
-> 只要 key 不变，换上游域名不需要动 Clash 里的订阅地址。
-
-**方式二：显式 /sub**
+把 Worker 域名当订阅域名用，路径原样透传给上游：
 
 ```
-https://你的域名.workers.dev/sub?url=https%3A%2F%2Fweial.us.ci%2FHappyZhang&token=你的TOKEN
+https://<你的Worker域名>/<订阅key>?clash=1
 ```
 
-适合临时换上游、或上游 key 不在根路径的情况。
+Worker 收到后去拉 `https://<订阅面板域名>/<订阅key>?clash=1`，注入住宅 IP 再返回。
+**订阅 key `<订阅key>` 不用改，只把域名换成 `<你的Worker域名>`。**
+
+> `?clash=1` 用来让面板返回 Clash YAML。不带这个参数时面板返回 base64 的
+> `vless://` 链接列表（v2rayN 用），本 Worker 两种格式都能注入。
+
+**方式二：显式 /sub（当前线上最稳）**
+
+```
+https://<你的Worker域名>/sub?url=https%3A%2F%2F<订阅面板域名>%2F<订阅key>%3Fclash%3D1
+```
+
+适合临时换上游、或上游 key 不在根路径的情况。没配 `TOKEN` 时不需要带 `token` 参数。
+
+> ⚠️ 如果线上还没更新到最新代码（旧版 `/` 与 `/<订阅key>` 会 502），
+> **先用方式二把订阅地址填进 Clash**，实测可正常拿到注入后的 33 个节点。
+> 等重新部署完成后，再换回方式一更短。
 
 ---
 
-**两种方式效果相同**，都会把节点 `path` 里的 proxyip 换掉。之后 Clash 每次更新订阅都会自动注入最新的住宅 IP，**你不需要再碰 `weial.us.ci` 的 PROXYIP 输入框**。
+**两种方式效果相同**，都会把节点 `path` 里的 proxyip 换成住宅 IP。之后 Clash 每次更新订阅都会自动注入最新的住宅 IP，**你不需要再碰 `<订阅面板域名>` 的 PROXYIP 输入框**。
+
+## 线上版本差异（重要）
+
+截至 2026-11-02 实测，`<你的Worker域名>` 上跑的还是**旧版代码**：
+
+| 能力 | 旧版（线上） | 新版（本仓库） |
+|---|---|---|
+| `/<key>` 路径直通 | ❌ 502（UPSTREAM 自环） | ✅ 正常 |
+| `/sub?url=...?clash=1`（Clash YAML） | ✅ 33/33 注入 | ✅ 33/33 注入 |
+| `/sub?url=...`（base64 vless 列表） | ❌ 解码后按 YAML 处理，0 注入 | ✅ 33/33 注入 |
+| `UPSTREAM` 填成自身 | ❌ 哑 502 | ✅ 500 + 明确提示 |
+
+重新部署后上表右列全部可用。**在那之前，Clash 订阅请用 `?clash=1` 的 `/sub` 地址**，
+不要用 base64 模式，也不要依赖 `/<key>` 直通。
 
 ## 接口
 
 | 路径 | 鉴权 | 说明 |
 |---|---|---|
-| `/<订阅key>` | ❌ | **路径直通**：拉 `https://<UPSTREAM>/<key>` 并注入（例 `/HappyZhang`） |
+| `/<订阅key>` | ❌ | **路径直通**：拉 `https://<UPSTREAM>/<key>` 并注入（例 `/<订阅key>`） |
 | `/sub?url=&token=` | ✅ | 显式订阅重写，`url` 为完整上游地址 |
 | `/` | ❌ | 纯文本住宅 IP 列表 + 扫描进度 |
 | `/best` | ❌ | 单个 `IP:443` |
@@ -213,9 +261,9 @@ https://你的域名.workers.dev/sub?url=https%3A%2F%2Fweial.us.ci%2FHappyZhang&
 
 | 上游 path | 注入结果 |
 |---|---|
-| `/proxyip=1.1.1.1?ed=2560` | `/proxyip=71.168.153.36:443?ed=2560` |
-| `/<uuid>/proxyip=1.1.1.1?ed=2560` | `/<uuid>/proxyip=71.168.153.36:443?ed=2560` |
-| `/?ed=2560`（后台开了「自动获取」） | `/proxyip=71.168.153.36:443?ed=2560` |
+| `/proxyip=1.1.1.1?ed=2560` | `/proxyip=203.0.113.7:443?ed=2560` |
+| `/<uuid>/proxyip=1.1.1.1?ed=2560` | `/<uuid>/proxyip=203.0.113.7:443?ed=2560` |
+| `/?ed=2560`（后台开了「自动获取」） | `/proxyip=203.0.113.7:443?ed=2560` |
 
 第三种是**新增**而非替换，早期版本会漏掉这种情况（导致完全没注入），已修复并加了 6 项回归测试。
 
@@ -242,7 +290,7 @@ https://你的域名.workers.dev/sub?url=https%3A%2F%2Fweial.us.ci%2FHappyZhang&
 npm test          # 等价于 node test/local-test.js
 ```
 
-当前 **49/49 通过**，覆盖：
+当前 **61/61 通过**，覆盖：
 
 | 分组 | 数量 | 内容 |
 |---|---|---|
@@ -251,6 +299,7 @@ npm test          # 等价于 node test/local-test.js
 | 无 proxyip 插入 | 6 | flow map 插入、双 path 注入、无重复、结构完整 |
 | 带 PATH 前缀 | 6 | 保留前缀、带/不带参数、根路径追加、无引号写法 |
 | proxyip 提取 | 5 | 改前 2 个池、改后 1 个住宅 IP |
+| 链接列表注入 | 12 | base64/明文 vless 的 path 改写、host/sni 不变、注释与空行保留 |
 | 路径直通 | 15 | key 识别、13 种保留名/非法格式边界、URL 拼接 |
 
 构建单文件版（Dashboard 用）：
@@ -261,17 +310,17 @@ npm run build     # 生成 dist/_worker.js
 
 ### 本地实测（wrangler dev + 真实订阅）
 
-用你的订阅 `https://weial.us.ci/HappyZhang` 跑通了全部接口：
+用你的订阅 `https://<订阅面板域名>/<订阅key>?clash=1` 跑通了全部接口：
 
 **`/refresh`**（触发扫描）
 ```json
 {"ok":true,"scanned":24,"poolSize":69,"cursor":24,
- "residential":[{"ip":"71.168.153.36","ptr":"static-71-168-153-36.cmdnnj.fios.verizon.net",
+ "residential":[{"ip":"203.0.113.7","ptr":"static-203-0-113-7.cmdnnj.fios.verizon.net",
  "isp":"Verizon Business","as":"AS701 Verizon Business","country":"US","score":80}]}
 HTTP 200   8.6s
 ```
 
-**`/HappyZhang`**（路径直通，核心功能）
+**`/<订阅key>`**（路径直通，核心功能）
 ```
 HTTP 200   191907 bytes
 Content-Type: text/yaml; charset=utf-8
@@ -283,7 +332,7 @@ YAML 解析校验：
 ```
 节点数       : 33
 已注入节点   : 33 / 33        ← 全部成功
-样例 path    : /proxyip=71.168.153.36:443?ed=2560
+样例 path    : /proxyip=203.0.113.7:443?ed=2560
 ed=2560 保留 : True
 YAML 有效    : True
 ```
@@ -291,35 +340,33 @@ YAML 有效    : True
 **其他接口**
 | 测试 | 结果 |
 |---|---|
-| `/` | 显示「上游: weial.us.ci，已扫描 48 / 池内 116」 |
-| `/json` | 含 `"upstream": "weial.us.ci"` |
-| `/HappyZhang?flag=clash` | 200，查询参数正确透传 |
-| `/best` | `71.168.153.36:443` |
+| `/` | 显示「上游: <订阅面板域名>，已扫描 48 / 池内 116」 |
+| `/json` | 含 `"upstream": "<订阅面板域名>"` |
+| `/<订阅key>?flag=clash` | 200，查询参数正确透传 |
+| `/best` | `203.0.113.7:443` |
 | `/NoSuchKey123` | 502（上游 404）✅ |
 | `/sub` 错误 token | 401 ✅ |
 | `/sub` 无 token | 401 ✅ |
 | `/sub` 缺 url | 400 ✅ |
 | base64 上游 | 自动解码并注入 ✅ |
 
-## 切换上游域名（2026-11）
+## 域名分工（2026-11 更新）
 
-旧上游 `gzt.us.ci` 已停用，本项目默认上游改为 `weial.us.ci`：
+| 角色 | 域名 | 说明 |
+|---|---|---|
+| 本 Worker（订阅重写） | `<你的Worker域名>` | 部署地址，Clash 里填这个 |
+| 上游订阅面板 | `<订阅面板域名>` | 真正的节点订阅来源，仍在正常服务 |
 
-| 位置 | 新值 |
-|---|---|
-| `wrangler.toml` 的 `[vars] UPSTREAM` | `weial.us.ci` |
-| `src/index.js` 默认值 | `weial.us.ci` |
-| Cloudflare 控制台 Settings → Variables | `UPSTREAM = weial.us.ci` |
+`UPSTREAM` 必须填**订阅面板**域名，不能填 Worker 自己的域名 `<你的Worker域名>`，
+否则 Worker 会去请求自己形成自环（新代码已加检测，会直接返回 500 并提示）。
 
-订阅 key 不变，Clash 里的地址仍然是：
-
+```toml
+[vars]
+UPSTREAM = "<订阅面板域名>"     # ✅
+# UPSTREAM = "<你的Worker域名>" # ❌ 自环
 ```
-https://<你的 Worker 域名>/HappyZhang
-```
 
-> 改完要重新部署（push 到 `main` 或控制台 Redeploy）才生效。
-> 控制台里手动配过的 `UPSTREAM` 会覆盖 `wrangler.toml`，记得一起改。
-
+> 控制台里手动配过 `UPSTREAM` 变量会覆盖 `wrangler.toml`，改完记得重新部署。
 ## 注意事项
 
 ### Worker 判断不了「能不能真当中继」

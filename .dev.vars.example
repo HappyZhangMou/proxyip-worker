@@ -5,3 +5,5 @@
 # 或在 Cloudflare 控制台 Settings → Variables and Secrets 里配成 Secret。
 
 TOKEN = "dev-local-token"
+# 订阅面板域名（不是本 Worker 的部署域名，填错会自环）
+UPSTREAM = "你的订阅面板域名"
