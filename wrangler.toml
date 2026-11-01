@@ -1,0 +1,46 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "proxyip-worker"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# Git 集成部署时，Cloudflare 会读取本文件。
+# 部署命令用默认的 `npx wrangler deploy` 即可，不需要额外配置 build 命令
+# （本项目是纯 JS，没有编译步骤；`npm run build` 只用于生成 Dashboard 单文件版）。
+
+# 每 20 分钟推进一小批扫描。
+# 免费版单次请求只有 50 子请求 / 6 并发，必须拆成多轮，
+# 不能一次扫完整个池子（100+ IP 会直接超限）。
+[triggers]
+crons = ["*/20 * * * *"]
+
+# 存扫描进度与结果。免费版 KV 每天 10 万读、1000 写，完全够用。
+#
+# 部署前替换成你自己的 KV ID：
+#   npx wrangler kv namespace create CACHE
+#
+# 也可以留空（删掉本段），Worker 会退化为无缓存模式：
+# /sub 每次实时扫描，慢但能用。
+[[kv_namespaces]]
+binding = "CACHE"
+id = "5a8bfc9c389b44f5971314bc4387afbe"
+
+[vars]
+# 上游订阅域名（不含 https://）。路径会原样透传：
+#   访问 /HappyZhang  → 拉取 https://<UPSTREAM>/HappyZhang
+UPSTREAM = "gzt.us.ci"
+
+# 要扫描的 ProxyIP 域名，逗号分隔。
+# 想看全部候选可加上：ProxyIP.SG.CMLiussss.net,HKG.ProxyIP.CMLiussss.net
+PROXYIP_DOMAINS = "proxyip.us.fxxk.dedyn.io,HKG.ProxyIP.CMLiussss.net,ICN.ProxyIP.CMLiussss.net,ProxyIP.SG.CMLiussss.net"
+
+# 住宅判定阈值。越高越严格，20 是实测比较均衡的值。
+MIN_SCORE = "20"
+
+# 注入节点 path 时追加的端口
+OUTPUT_PORT = "443"
+
+# 注意：TOKEN 不要写在这里。
+# 在 Cloudflare 控制台的 Settings → Variables and Secrets 里配成 Secret，
+# 或用 `npx wrangler secret put TOKEN` 设置。
+# 这里只做本地开发的占位。
+# TOKEN = "dev-only-placeholder"
