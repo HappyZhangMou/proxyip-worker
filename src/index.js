@@ -22,6 +22,8 @@
 import {
   scoreIP,
   injectProxyIP,
+  injectLinkList,
+  looksLikeLinkList,
   extractProxyIPs,
 } from './lib.js';
 
@@ -217,6 +219,96 @@ async function cachedHosts(env, withPort = true) {
 /** 保留路径，不当作订阅 key 处理 */
 const RESERVED = new Set(['', 'sub', 'json', 'best', 'refresh', 'health', 'favicon.ico']);
 
+/** 上游订阅面板域名（不是本 Worker 的部署域名） */
+const DEFAULT_UPSTREAM = 'gzt.us.ci';
+
+/** 本 Worker 自己的主机名，用于检测自环配置 */
+function isSelfLoop(targetUrl, request) {
+  try {
+    return new URL(targetUrl).hostname.toLowerCase() === new URL(request.url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 拉取上游订阅，识别 YAML / base64 链接列表，注入后返回 Response。
+ */
+async function fetchAndInject(request, url, hosts, extraHeaders = {}) {
+  const ua = request.headers.get('user-agent') || 'clash-verge/v2.0.0';
+
+  if (isSelfLoop(url, request)) {
+    return text(
+      [
+        '# 配置错误：UPSTREAM 指向了本 Worker 自身，会无限自环',
+        `# 当前值: ${url}`,
+        '# 请把 UPSTREAM 改成订阅面板域名（例如 gzt.us.ci），或访问',
+        `#   ${new URL(request.url).origin}/sub?url=<完整上游地址>&token=<TOKEN>`,
+      ].join('\n'),
+      500,
+    );
+  }
+
+  let upstream;
+  try {
+    upstream = await fetch(url, {
+      headers: {
+        'user-agent': ua,
+        accept: request.headers.get('accept') || '*/*',
+      },
+      signal: AbortSignal.timeout(25000),
+    });
+  } catch (e) {
+    return text(`# 拉取上游订阅失败: ${e.message}\n# 目标: ${url}`, 502);
+  }
+  if (!upstream.ok) {
+    return text(`# 上游返回 ${upstream.status}\n# 目标: ${url}`, 502);
+  }
+
+  const raw = await upstream.text();
+  const isYaml = /^(dns|proxies|port|mixed-port|proxy-groups|rules|socks-port|allow-lan):/m.test(raw);
+
+  // 明文 YAML → 直接注入 path
+  if (isYaml) {
+    return new Response(injectProxyIP(raw, hosts), {
+      headers: {
+        'content-type': 'text/yaml; charset=utf-8',
+        'cache-control': 'no-store',
+        'profile-update-interval': '6',
+        'profile-web-page-url': `${new URL(request.url).origin}/`,
+        'subscription-userinfo': upstream.headers.get('subscription-userinfo') || '',
+        ...extraHeaders,
+      },
+    });
+  }
+
+  // base64 或明文链接列表（vless:// 等）→ 改 path 查询参数
+  let list = raw;
+  if (looksLikeLinkList(raw)) {
+    list = raw;
+  } else {
+    try {
+      list = atob(raw.replace(/\s/g, ''));
+    } catch {
+      return text(`# 上游格式无法识别（既不是 Clash YAML 也不是 base64 订阅）`, 502);
+    }
+  }
+
+  const injected = looksLikeLinkList(list) ? injectLinkList(list, hosts) : injectProxyIP(list, hosts);
+  return new Response(injected, {
+    headers: {
+      'content-type': looksLikeLinkList(injected)
+        ? 'text/plain; charset=utf-8'
+        : 'text/yaml; charset=utf-8',
+      'cache-control': 'no-store',
+      'profile-update-interval': '6',
+      'profile-web-page-url': `${new URL(request.url).origin}/`,
+      'subscription-userinfo': upstream.headers.get('subscription-userinfo') || '',
+      ...extraHeaders,
+    },
+  });
+}
+
 /** 看起来像订阅 key：单段、只含安全字符、2-64 位 */
 function looksLikeKey(pathname) {
   const seg = pathname.replace(/^\/+|\/+$/g, '');
@@ -235,46 +327,9 @@ async function proxySubscription(request, env, key, extraQuery = '') {
     return text('# 尚无住宅 IP，请等待 cron 扫描完成，或先访问 /refresh?token=TOKEN', 503);
   }
 
-  const upstreamBase = String(env.UPSTREAM || 'weial.us.ci').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const upstreamBase = String(env.UPSTREAM || DEFAULT_UPSTREAM).replace(/^https?:\/\//, '').replace(/\/+$/, '');
   const target = `https://${upstreamBase}/${key}${extraQuery}`;
-
-  let upstream;
-  try {
-    upstream = await fetch(target, {
-      headers: {
-        'user-agent': request.headers.get('user-agent') || 'clash-verge/v2.0.0',
-        accept: request.headers.get('accept') || '*/*',
-      },
-      signal: AbortSignal.timeout(25000),
-    });
-  } catch (e) {
-    return text(`# 拉取上游订阅失败: ${e.message}\n# 目标: ${target}`, 502);
-  }
-  if (!upstream.ok) {
-    return text(`# 上游返回 ${upstream.status}\n# 目标: ${target}`, 502);
-  }
-
-  const raw = await upstream.text();
-  // 上游可能是明文 YAML 或 base64 订阅
-  let body = raw;
-  if (!/^(dns|proxies|port|mixed-port|proxy-groups|rules|socks-port|allow-lan):/m.test(raw)) {
-    try {
-      body = atob(raw.replace(/\s/g, ''));
-    } catch {
-      body = raw;
-    }
-  }
-
-  const injected = injectProxyIP(body, hosts);
-  return new Response(injected, {
-    headers: {
-      'content-type': 'text/yaml; charset=utf-8',
-      'cache-control': 'no-store',
-      'profile-update-interval': '6',
-      'profile-web-page-url': `${new URL(request.url).origin}/`,
-      'subscription-userinfo': upstream.headers.get('subscription-userinfo') || '',
-    },
-  });
+  return fetchAndInject(request, target, hosts);
 }
 
 export default {
@@ -293,34 +348,7 @@ export default {
       const hosts = await cachedHosts(env);
       if (hosts.length === 0) return text('# 尚无住宅 IP，请等待 cron 扫描完成', 503);
 
-      let upstream;
-      try {
-        upstream = await fetch(target, {
-          headers: { 'user-agent': request.headers.get('user-agent') || 'clash-verge/v2.0.0' },
-          signal: AbortSignal.timeout(25000),
-        });
-      } catch (e) {
-        return text(`# 拉取上游订阅失败: ${e.message}`, 502);
-      }
-      if (!upstream.ok) return text(`# 上游返回 ${upstream.status}`, 502);
-
-      const raw = await upstream.text();
-      let body = raw;
-      if (!/^(dns|proxies|port|mixed-port|proxy-groups|rules):/m.test(raw)) {
-        try {
-          body = atob(raw.replace(/\s/g, ''));
-        } catch {
-          body = raw;
-        }
-      }
-      return new Response(injectProxyIP(body, hosts), {
-        headers: {
-          'content-type': 'text/yaml; charset=utf-8',
-          'cache-control': 'no-store',
-          'profile-update-interval': '6',
-          'subscription-userinfo': upstream.headers.get('subscription-userinfo') || '',
-        },
-      });
+      return fetchAndInject(request, target, hosts);
     }
 
     // ---- 状态与列表 ----
@@ -332,7 +360,7 @@ export default {
         poolSize: (state.pool || []).length,
         cursor: state.cursor || 0,
         lastRun: state.lastRun || null,
-        upstream: env.UPSTREAM || 'weial.us.ci',
+        upstream: env.UPSTREAM || DEFAULT_UPSTREAM,
         residential: state.residential || [],
       });
     }
@@ -373,7 +401,7 @@ export default {
     // ---- 根路径：说明页 ----
     const hosts = await cachedHosts(env);
     const state = await loadState(env);
-    const upstream = env.UPSTREAM || 'weial.us.ci';
+    const upstream = env.UPSTREAM || DEFAULT_UPSTREAM;
     if (url.pathname === '/' && hosts.length === 0) {
       return text(
         [

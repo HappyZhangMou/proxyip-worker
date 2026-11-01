@@ -169,6 +169,67 @@ export function injectProxyIP(yaml, hosts, comment = true) {
   return out;
 }
 
+/** 看起来像订阅链接列表（vless:// / vmess:// / trojan:// …） */
+export function looksLikeLinkList(text) {
+  return /^\s*(vless|vmess|trojan|ss|ssr|hysteria2?|tuic):\/\//im.test(text);
+}
+
+/**
+ * 改写单条订阅链接里的 path 查询参数。
+ * 例如 vless://uuid@1.2.3.4:8443?path=%2F%3Fed%3D2560
+ */
+function rewriteUriPath(line, host) {
+  const q = line.indexOf('?');
+  if (q < 0) return line;
+  const hash = line.indexOf('#', q);
+  const head = line.slice(0, q + 1);
+  const query = hash >= 0 ? line.slice(q + 1, hash) : line.slice(q + 1);
+  const tail = hash >= 0 ? line.slice(hash) : '';
+
+  let touched = false;
+  const parts = query.split('&').map((kv) => {
+    const eq = kv.indexOf('=');
+    if (eq < 0) return kv;
+    if (kv.slice(0, eq).toLowerCase() !== 'path') return kv;
+    touched = true;
+    let decoded = kv.slice(eq + 1);
+    try {
+      decoded = decodeURIComponent(decoded);
+    } catch {
+      /* 编码异常时按原样处理 */
+    }
+    // 只转义会破坏查询串的字符，保持 path 可读
+    const encoded = rewritePath(decoded, host)
+      .replace(/%/g, '%25')
+      .replace(/#/g, '%23')
+      .replace(/&/g, '%26')
+      .replace(/\+/g, '%2B')
+      .replace(/\s/g, '%20');
+    return `path=${encoded}`;
+  });
+  if (!touched) return line;
+  return head + parts.join('&') + tail;
+}
+
+/**
+ * 把住宅 IP 注入 base64/明文订阅链接列表（vless:// 等）。
+ * 只改 path 里的 proxyip，其余字符保持不变；空行与注释原样保留。
+ */
+export function injectLinkList(list, hosts, comment = true) {
+  if (!hosts || hosts.length === 0) return list;
+  const primary = hosts[0];
+  const lines = list.split(/\r?\n/).map((line) =>
+    /^\s*(vless|vmess|trojan|ss|ssr|hysteria2?|tuic):\/\//i.test(line)
+      ? rewriteUriPath(line, primary)
+      : line,
+  );
+  if (comment) {
+    const stamp = new Date().toISOString();
+    lines.unshift(`# [proxyip-worker] ${stamp} 候选住宅IP: ${hosts.slice(0, 10).join(', ')}`);
+  }
+  return lines.join('\n');
+}
+
 /** 从 Clash 配置里提取所有 proxyip 值，便于对比 */
 export function extractProxyIPs(yaml) {
   const set = new Set();
