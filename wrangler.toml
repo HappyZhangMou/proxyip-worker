@@ -27,7 +27,7 @@ id = "5a8bfc9c389b44f5971314bc4387afbe"
 [vars]
 # 上游订阅域名（不含 https://）。路径会原样透传：
 #   访问 /HappyZhang  → 拉取 https://<UPSTREAM>/HappyZhang
-UPSTREAM = "gzt.us.ci"
+UPSTREAM = "weial.us.ci"
 
 # 要扫描的 ProxyIP 域名，逗号分隔。
 # 想看全部候选可加上：ProxyIP.SG.CMLiussss.net,HKG.ProxyIP.CMLiussss.net

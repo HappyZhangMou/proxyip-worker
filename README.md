@@ -19,7 +19,7 @@ async function 整理成数组(内容) {
 
 能实现「填一次」的正确做法是**订阅重写**：让 Clash 的订阅地址指向本 Worker，
 Worker 每次被请求时读取已缓存的住宅 IP，实时注入进 YAML 再返回。
-你在 `gzt.us.ci` 里什么都不用填，只在 Clash 里改一次订阅地址。
+你在 `weial.us.ci` 里什么都不用填，只在 Clash 里改一次订阅地址。
 
 ## 关于免费版限制（上一版超限的原因）
 
@@ -87,7 +87,7 @@ git push -u origin main
   | 类型 | 名称 | 值 |
   |---|---|---|
   | **Secret** | `TOKEN` | 自己编的随机串 |
-  | Text | `UPSTREAM` | `gzt.us.ci` |
+  | Text | `UPSTREAM` | `weial.us.ci` |
   | Text | `PROXYIP_DOMAINS` | 见 `wrangler.toml` |
   | Text | `MIN_SCORE` | `20` |
   | Text | `OUTPUT_PORT` | `443` |
@@ -166,32 +166,32 @@ proxyip-worker/
 https://你的域名.workers.dev/HappyZhang
 ```
 
-Worker 收到后会自动去拉 `https://gzt.us.ci/HappyZhang`，注入住宅 IP 再返回。
+Worker 收到后会自动去拉 `https://weial.us.ci/HappyZhang`，注入住宅 IP 再返回。
 **你的订阅 key `HappyZhang` 不用改，只换域名。**
 
-等 `host.gzt.us.ci` 配好后，把 `UPSTREAM` 改掉即可：
+等 `host.weial.us.ci` 配好后，把 `UPSTREAM` 改掉即可：
 
 ```toml
 [vars]
-UPSTREAM = "host.gzt.us.ci"     # 原来指向 gzt.us.ci
+UPSTREAM = "host.weial.us.ci"     # 原来指向 weial.us.ci
 ```
 
 之后访问 `https://你的域名.workers.dev/HappyZhang`
-→ 自动拉 `https://host.gzt.us.ci/HappyZhang`。
+→ 自动拉 `https://host.weial.us.ci/HappyZhang`。
 
 > 只要 key 不变，换上游域名不需要动 Clash 里的订阅地址。
 
 **方式二：显式 /sub**
 
 ```
-https://你的域名.workers.dev/sub?url=https%3A%2F%2Fgzt.us.ci%2FHappyZhang&token=你的TOKEN
+https://你的域名.workers.dev/sub?url=https%3A%2F%2Fweial.us.ci%2FHappyZhang&token=你的TOKEN
 ```
 
 适合临时换上游、或上游 key 不在根路径的情况。
 
 ---
 
-**两种方式效果相同**，都会把节点 `path` 里的 proxyip 换掉。之后 Clash 每次更新订阅都会自动注入最新的住宅 IP，**你不需要再碰 `gzt.us.ci` 的 PROXYIP 输入框**。
+**两种方式效果相同**，都会把节点 `path` 里的 proxyip 换掉。之后 Clash 每次更新订阅都会自动注入最新的住宅 IP，**你不需要再碰 `weial.us.ci` 的 PROXYIP 输入框**。
 
 ## 接口
 
@@ -261,7 +261,7 @@ npm run build     # 生成 dist/_worker.js
 
 ### 本地实测（wrangler dev + 真实订阅）
 
-用你的订阅 `https://gzt.us.ci/HappyZhang` 跑通了全部接口：
+用你的订阅 `https://weial.us.ci/HappyZhang` 跑通了全部接口：
 
 **`/refresh`**（触发扫描）
 ```json
@@ -291,8 +291,8 @@ YAML 有效    : True
 **其他接口**
 | 测试 | 结果 |
 |---|---|
-| `/` | 显示「上游: gzt.us.ci，已扫描 48 / 池内 116」 |
-| `/json` | 含 `"upstream": "gzt.us.ci"` |
+| `/` | 显示「上游: weial.us.ci，已扫描 48 / 池内 116」 |
+| `/json` | 含 `"upstream": "weial.us.ci"` |
 | `/HappyZhang?flag=clash` | 200，查询参数正确透传 |
 | `/best` | `71.168.153.36:443` |
 | `/NoSuchKey123` | 502（上游 404）✅ |
@@ -300,6 +300,25 @@ YAML 有效    : True
 | `/sub` 无 token | 401 ✅ |
 | `/sub` 缺 url | 400 ✅ |
 | base64 上游 | 自动解码并注入 ✅ |
+
+## 切换上游域名（2026-11）
+
+旧上游 `gzt.us.ci` 已停用，本项目默认上游改为 `weial.us.ci`：
+
+| 位置 | 新值 |
+|---|---|
+| `wrangler.toml` 的 `[vars] UPSTREAM` | `weial.us.ci` |
+| `src/index.js` 默认值 | `weial.us.ci` |
+| Cloudflare 控制台 Settings → Variables | `UPSTREAM = weial.us.ci` |
+
+订阅 key 不变，Clash 里的地址仍然是：
+
+```
+https://<你的 Worker 域名>/HappyZhang
+```
+
+> 改完要重新部署（push 到 `main` 或控制台 Redeploy）才生效。
+> 控制台里手动配过的 `UPSTREAM` 会覆盖 `wrangler.toml`，记得一起改。
 
 ## 注意事项
 

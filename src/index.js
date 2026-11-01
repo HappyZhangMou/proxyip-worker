@@ -235,7 +235,7 @@ async function proxySubscription(request, env, key, extraQuery = '') {
     return text('# 尚无住宅 IP，请等待 cron 扫描完成，或先访问 /refresh?token=TOKEN', 503);
   }
 
-  const upstreamBase = String(env.UPSTREAM || 'gzt.us.ci').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const upstreamBase = String(env.UPSTREAM || 'weial.us.ci').replace(/^https?:\/\//, '').replace(/\/+$/, '');
   const target = `https://${upstreamBase}/${key}${extraQuery}`;
 
   let upstream;
@@ -332,7 +332,7 @@ export default {
         poolSize: (state.pool || []).length,
         cursor: state.cursor || 0,
         lastRun: state.lastRun || null,
-        upstream: env.UPSTREAM || 'gzt.us.ci',
+        upstream: env.UPSTREAM || 'weial.us.ci',
         residential: state.residential || [],
       });
     }
@@ -373,7 +373,7 @@ export default {
     // ---- 根路径：说明页 ----
     const hosts = await cachedHosts(env);
     const state = await loadState(env);
-    const upstream = env.UPSTREAM || 'gzt.us.ci';
+    const upstream = env.UPSTREAM || 'weial.us.ci';
     if (url.pathname === '/' && hosts.length === 0) {
       return text(
         [

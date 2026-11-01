@@ -73,9 +73,9 @@ console.log('\n[2] 订阅注入');
 const sampleYaml = [
   'proxies:',
   '  - {name: "HK", server: 1.2.3.4, port: 8443, type: vless,',
-  '     path: "/proxyip=ProxyIP.SG.CMLiussss.net?ed=2560", servername: gzt.us.ci}',
+  '     path: "/proxyip=ProxyIP.SG.CMLiussss.net?ed=2560", servername: weial.us.ci}',
   '  - {name: "JP", server: 5.6.7.8, port: 8443, type: vless,',
-  '     path: "/proxyip=ProxyIP.KR.CMLiussss.net?ed=2560", servername: gzt.us.ci}',
+  '     path: "/proxyip=ProxyIP.KR.CMLiussss.net?ed=2560", servername: weial.us.ci}',
   'proxy-groups:',
   '  - name: TEST',
   'rules:',
@@ -125,7 +125,7 @@ console.log('\n[2b] 上游无 proxyip 时插入');
 const noProxyYaml = [
   'proxies:',
   '  - {name: "HK", server: 1.2.3.4, port: 8443, type: vless,',
-  '     xhttp-opts: {path: "/?ed=2560", host: gzt.us.ci}}',
+  '     xhttp-opts: {path: "/?ed=2560", host: weial.us.ci}}',
   '  - name: "JP"',
   '    server: 5.6.7.8',
   '    type: vless',
@@ -221,10 +221,10 @@ check('65 位超长不算 key', looksLikeKey('/' + 'a'.repeat(65)) === false);
 
 // 上游 URL 拼接
 {
-  const upstream = 'gzt.us.ci';
+  const upstream = 'weial.us.ci';
   const build = (key, qs) => `https://${upstream}/${key}${qs}`;
-  check('key 拼接正确', build('HappyZhang', '') === 'https://gzt.us.ci/HappyZhang');
-  check('带参数拼接正确', build('HappyZhang', '?flag=clash') === 'https://gzt.us.ci/HappyZhang?flag=clash');
+  check('key 拼接正确', build('HappyZhang', '') === 'https://weial.us.ci/HappyZhang');
+  check('带参数拼接正确', build('HappyZhang', '?flag=clash') === 'https://weial.us.ci/HappyZhang?flag=clash');
 }
 
 // ---------------------------------------------------------------- 汇总
