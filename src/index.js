@@ -222,6 +222,20 @@ async function saveState(env, state, prev) {
   await env.CACHE.put(CACHE_KEY, JSON.stringify(state), { expirationTtl: 172800 });
 }
 
+/**
+ * ISO 时间转 UTC+8 显示，如 2026-11-02 14:55:22。
+ * 传入非法/空值时原样返回，避免输出 Invalid Date。
+ */
+function toCst(iso) {
+  if (!iso) return '从未';
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return String(iso);
+  const d = new Date(t.getTime() + 8 * 3600 * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} `
+    + `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
+}
+
 function hostsFromState(env, state) {
   const port = env.OUTPUT_PORT || '443';
   return (state.residential || []).map((r) => (port ? `${r.ip}:${port}` : r.ip));
@@ -386,6 +400,7 @@ export default {
         poolSize: (state.pool || []).length,
         cursor: state.cursor || 0,
         lastRun: state.lastRun || null,
+        lastRunCst: toCst(state.lastRun),
         upstream: env.UPSTREAM || DEFAULT_UPSTREAM,
         residential: state.residential || [],
       });
@@ -443,7 +458,7 @@ export default {
         [
           '# 住宅 ProxyIP 列表',
           `# 上游订阅: ${upstream}`,
-          `# 上次扫描: ${state.lastRun || '从未'}`,
+          `# 上次扫描: ${toCst(state.lastRun)} (UTC+8)`,
           `# 已扫描: ${state.scanned || 0} / 池内 ${(state.pool || []).length} 个 IP`,
           `# 订阅地址: ${url.origin}/<订阅key>   (例: ${url.origin}/<订阅key>)`,
           '',
