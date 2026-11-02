@@ -35,7 +35,7 @@ crons = ["*/5 * * * *"]
 #
 # ⚠️ 这里填的是「订阅面板」的域名，不是本 Worker 自己的部署域名。
 # 填成本 Worker 自己会导致自环（Worker 请求自己 → 502）。
-UPSTREAM = "你的订阅面板域名"   # 例：example-panel.example.com（不要填 Worker 自己的域名，会自环）
+UPSTREAM = "gzt.us.ci"   # 订阅面板域名（不要填 Worker 自己的域名，会自环）
 
 # 要扫描的 ProxyIP 域名，逗号分隔。
 # 想看全部候选可加上：ProxyIP.SG.CMLiussss.net,HKG.ProxyIP.CMLiussss.net
