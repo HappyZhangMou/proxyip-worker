@@ -6,8 +6,4 @@
 
 TOKEN = "dev-local-token"
 # 订阅面板域名（不是本 Worker 的部署域名，填错会自环）
-<<<<<<< HEAD
 UPSTREAM = "你的订阅面板域名"
-=======
-UPSTREAM = "gzt.us.ci"
->>>>>>> ec6baca8be1329ac987c33b285e6c963b13c9b0e

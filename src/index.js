@@ -233,11 +233,7 @@ async function cachedHosts(env, withPort = true) {
 const RESERVED = new Set(['', 'sub', 'json', 'best', 'refresh', 'health', 'favicon.ico']);
 
 /** 上游订阅面板域名（不是本 Worker 的部署域名） */
-<<<<<<< HEAD
 const DEFAULT_UPSTREAM = 'example-panel.example.com';   // 订阅面板域名，部署时用 UPSTREAM 变量覆盖
-=======
-const DEFAULT_UPSTREAM = 'gzt.us.ci';
->>>>>>> ec6baca8be1329ac987c33b285e6c963b13c9b0e
 
 /** 本 Worker 自己的主机名，用于检测自环配置 */
 function isSelfLoop(targetUrl, request) {
@@ -259,11 +255,7 @@ async function fetchAndInject(request, url, hosts, extraHeaders = {}) {
       [
         '# 配置错误：UPSTREAM 指向了本 Worker 自身，会无限自环',
         `# 当前值: ${url}`,
-<<<<<<< HEAD
         '# 请把 UPSTREAM 改成订阅面板域名（UPSTREAM 变量），或访问',
-=======
-        '# 请把 UPSTREAM 改成订阅面板域名（例如 gzt.us.ci），或访问',
->>>>>>> ec6baca8be1329ac987c33b285e6c963b13c9b0e
         `#   ${new URL(request.url).origin}/sub?url=<完整上游地址>&token=<TOKEN>`,
       ].join('\n'),
       500,
