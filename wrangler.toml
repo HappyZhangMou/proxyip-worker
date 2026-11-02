@@ -2,6 +2,8 @@
 name = "proxyip-worker"
 main = "src/index.js"
 compatibility_date = "2024-11-01"
+workers_dev = false
+preview_urls = false
 
 # Git 集成部署时，Cloudflare 会读取本文件。
 # 部署命令用默认的 `npx wrangler deploy` 即可，不需要额外配置 build 命令
