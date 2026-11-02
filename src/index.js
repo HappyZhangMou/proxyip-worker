@@ -222,11 +222,31 @@ async function saveState(env, state, prev) {
   await env.CACHE.put(CACHE_KEY, JSON.stringify(state), { expirationTtl: 172800 });
 }
 
-/** 读取已缓存的住宅 IP（不触发扫描） */
-async function cachedHosts(env, withPort = true) {
-  const state = await loadState(env);
+function hostsFromState(env, state) {
   const port = env.OUTPUT_PORT || '443';
   return (state.residential || []).map((r) => (port ? `${r.ip}:${port}` : r.ip));
+}
+
+/** 读取已缓存的住宅 IP（不触发扫描） */
+async function cachedHosts(env) {
+  return hostsFromState(env, await loadState(env));
+}
+
+/**
+ * 优先读缓存；缓存为空（未绑定 KV / cron 还没跑到）时现场扫一轮，
+ * 扫不到住宅 IP 就返回空数组 —— 调用方直接透传上游订阅，保证订阅永远可用。
+ */
+async function getHosts(env) {
+  const hosts = await cachedHosts(env);
+  if (hosts.length > 0) return hosts;
+  try {
+    const prev = await loadState(env);
+    const next = await scanRound(env, prev);
+    await saveState(env, next, prev);
+    return hostsFromState(env, next);
+  } catch {
+    return [];
+  }
 }
 
 /** 保留路径，不当作订阅 key 处理 */
@@ -335,11 +355,7 @@ function looksLikeKey(pathname) {
  * key 为空表示走 env.UPSTREAM 根路径。
  */
 async function proxySubscription(request, env, key, extraQuery = '') {
-  const hosts = await cachedHosts(env);
-  if (hosts.length === 0) {
-    return text('# 尚无住宅 IP，请等待 cron 扫描完成，或先访问 /refresh?token=TOKEN', 503);
-  }
-
+  const hosts = await getHosts(env);
   const upstreamBase = String(env.UPSTREAM || DEFAULT_UPSTREAM).replace(/^https?:\/\//, '').replace(/\/+$/, '');
   const target = `https://${upstreamBase}/${key}${extraQuery}`;
   return fetchAndInject(request, target, hosts);
@@ -358,10 +374,7 @@ export default {
       const target = url.searchParams.get('url');
       if (!target) return text('missing ?url=', 400);
 
-      const hosts = await cachedHosts(env);
-      if (hosts.length === 0) return text('# 尚无住宅 IP，请等待 cron 扫描完成', 503);
-
-      return fetchAndInject(request, target, hosts);
+      return fetchAndInject(request, target, await getHosts(env));
     }
 
     // ---- 状态与列表 ----
