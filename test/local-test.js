@@ -222,6 +222,33 @@ console.log('\n[2c] base64 / 链接列表注入');
   check('行数 3 行 + 1 注释', out.split('\n').length === 4, String(out.split('\n').length));
 }
 
+// ---------------------------------------------------------------- 链接列表注入
+
+console.log('\n[2c] base64 / 链接列表注入');
+
+{
+  const uuid = 'ee22d84e-05f8-401e-8cc2-86e37b79e243';
+  const vless =
+    `vless://${uuid}@77.239.98.27:8443?security=tls&type=xhttp&mode=stream-one` +
+    '&host=gzt.us.ci&sni=gzt.us.ci&path=%2F%3Fed%3D2560&encryption=none&alpn=#DE德国|18ms';
+  const list = [vless, 'vmess://eyJhZGQiOiIxLjEuMS4xIn0=', '# 注释行'].join('\n');
+
+  check('识别为链接列表', looksLikeLinkList(list) === true);
+  check('YAML 不被误判为链接列表', looksLikeLinkList(sampleYaml) === false);
+
+  const out = injectLinkList(list, ['71.168.153.36:443']);
+  check('vless 注入了 proxyip', out.includes('/proxyip=71.168.153.36:443?ed=2560'), '');
+  check('path 已 URL 解码后重写', !/path=%2F%3F/.test(out.split('\n')[1]));
+  check('未做全量转义（path 仍可读）', out.includes('path=/proxyip=71.168.153.36:443?ed=2560'), '');
+  check('ed=2560 保留', out.includes('ed%3D2560') || out.includes('ed=2560'));
+  check('host/sni 未被改动', out.includes('host=gzt.us.ci') && out.includes('sni=gzt.us.ci'));
+  check('节点名 # 保留', out.includes('#DE德国|18ms'));
+  check('注释行原样保留', out.includes('# 注释行'));
+  check('非 vless 行未被改动', out.includes('vmess://eyJhZGQiOiIxLjEuMS4xIn0='));
+  check('首行是注入注释', /^# \[proxyip-worker\]/.test(out));
+  check('行数 3 行 + 1 注释', out.split('\n').length === 4, String(out.split('\n').length));
+}
+
 // ---------------------------------------------------------------- 路径直通
 
 console.log('\n[4] 路径直通（/<订阅key>）');
