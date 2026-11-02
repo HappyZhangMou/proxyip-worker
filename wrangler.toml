@@ -25,9 +25,9 @@ crons = ["*/5 * * * *"]
 #
 # 也可以留空（删掉本段），Worker 会退化为无缓存模式：
 # /sub 每次实时扫描，慢但能用。
-#[[kv_namespaces]]
-#binding = "CACHE"
-#id = "替换成你自己的KV命名空间ID"
+[[kv_namespaces]]
+binding = "CACHE"
+id = "5a8bfc9c389b44f5971314bc4387afbe"
 
 [vars]
 # 上游订阅域名（不含 https://）。路径会原样透传：
