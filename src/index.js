@@ -25,6 +25,7 @@ import {
   injectLinkList,
   looksLikeLinkList,
   extractProxyIPs,
+  cstStamp,
 } from './lib.js';
 
 const DOH = 'https://dns.alidns.com/resolve';
@@ -224,16 +225,13 @@ async function saveState(env, state, prev) {
 
 /**
  * ISO 时间转 UTC+8 显示，如 2026-11-02 14:55:22。
- * 传入非法/空值时原样返回，避免输出 Invalid Date。
+ * 空值返回「从未」，非法值原样返回，避免输出 Invalid Date。
  */
 function toCst(iso) {
   if (!iso) return '从未';
   const t = new Date(iso);
   if (Number.isNaN(t.getTime())) return String(iso);
-  const d = new Date(t.getTime() + 8 * 3600 * 1000);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} `
-    + `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
+  return cstStamp(t);
 }
 
 function hostsFromState(env, state) {

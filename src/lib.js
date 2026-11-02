@@ -134,6 +134,14 @@ export function rewritePath(pathValue, host) {
   return `${base}/proxyip=${host}`;
 }
 
+/** 当前时间，格式化为 UTC+8 的 `YYYY-MM-DD HH:mm:ss`（订阅注释用） */
+export function cstStamp(date = new Date()) {
+  const d = new Date(date.getTime() + 8 * 3600 * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} `
+    + `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
+}
+
 /**
  * 把住宅 IP 列表注入到 Clash 配置中。
  *
@@ -162,9 +170,9 @@ export function injectProxyIP(yaml, hosts, comment = true) {
   );
 
   if (comment) {
-    const stamp = new Date().toISOString();
+    const stamp = cstStamp();
     const list = hosts.slice(0, 10).join(', ');
-    out = `# [proxyip-worker] ${stamp} 候选住宅IP: ${list}\n${out}`;
+    out = `# [proxyip-worker] ${stamp} (UTC+8) 候选住宅IP: ${list}\n${out}`;
   }
   return out;
 }
@@ -224,8 +232,8 @@ export function injectLinkList(list, hosts, comment = true) {
       : line,
   );
   if (comment) {
-    const stamp = new Date().toISOString();
-    lines.unshift(`# [proxyip-worker] ${stamp} 候选住宅IP: ${hosts.slice(0, 10).join(', ')}`);
+    const stamp = cstStamp();
+    lines.unshift(`# [proxyip-worker] ${stamp} (UTC+8) 候选住宅IP: ${hosts.slice(0, 10).join(', ')}`);
   }
   return lines.join('\n');
 }
